@@ -1,0 +1,12 @@
+diff -rupN ../../../target/deps/puppetlabs-stdlib-4.1.0/lib/facter/root_home.rb ../../target/puppet/stdlib/lib/facter/root_home.rb
+--- ../../../target/deps/puppetlabs-stdlib-4.1.0/lib/facter/root_home.rb	2013-05-10 22:23:58.000000000 +0100
++++ ../../target/puppet/stdlib/lib/facter/root_home.rb	2019-03-13 11:11:34.924878047 +0000
+@@ -9,7 +9,7 @@ module Facter::Util::RootHome
+     # The home directory is the sixth element in the passwd entry
+     # If the platform doesn't have getent, root_ent will be nil and we should
+     # return it straight away.
+-    root_ent && root_ent.split(":")[5]
++    !root_ent.to_s.empty? && root_ent.split(":")[5]
+   end
+   end
+ end

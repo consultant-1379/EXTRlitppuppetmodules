@@ -1,0 +1,400 @@
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/lib/facter/ip6tables_version.rb ../../target/puppet/firewall/lib/facter/ip6tables_version.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/lib/facter/ip6tables_version.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/lib/facter/ip6tables_version.rb	2019-03-13 13:24:04.741787787 +0000
+@@ -2,7 +2,7 @@ Facter.add(:ip6tables_version) do
+   confine :kernel => :linux
+   setcode do
+     version = Facter::Util::Resolution.exec('ip6tables --version')
+-    if version
++    if !version.to_s.empty?
+       version.match(/\d+\.\d+\.\d+/).to_s
+     else
+       nil
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/lib/facter/iptables_persistent_version.rb ../../target/puppet/firewall/lib/facter/iptables_persistent_version.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/lib/facter/iptables_persistent_version.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/lib/facter/iptables_persistent_version.rb	2019-03-13 13:24:15.814865665 +0000
+@@ -6,7 +6,7 @@ Facter.add(:iptables_persistent_version)
+     cmd = "dpkg-query -Wf '${Version}' iptables-persistent 2>/dev/null"
+     version = Facter::Util::Resolution.exec(cmd)
+ 
+-    if version.nil? or !version.match(/\d+\.\d+/)
++    if version.to_s.empty? or !version.match(/\d+\.\d+/)
+       nil
+     else
+       version
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/lib/facter/iptables_version.rb ../../target/puppet/firewall/lib/facter/iptables_version.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/lib/facter/iptables_version.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/lib/facter/iptables_version.rb	2019-03-13 13:24:31.167973643 +0000
+@@ -2,7 +2,7 @@ Facter.add(:iptables_version) do
+   confine :kernel => :linux
+   setcode do
+     version = Facter::Util::Resolution.exec('iptables --version')
+-    if version
++    if !version.to_s.empty?
+       version.match(/\d+\.\d+\.\d+/).to_s
+     else
+       nil
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/lib/puppet/provider/firewall/ip6tables.rb ../../target/puppet/firewall/lib/puppet/provider/firewall/ip6tables.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/lib/puppet/provider/firewall/ip6tables.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/lib/puppet/provider/firewall/ip6tables.rb	2019-03-13 13:22:49.000000000 +0000
+@@ -1,4 +1,4 @@
+-Puppet::Type.type(:firewall).provide :ip6tables, :parent => :iptables, :source => :iptables do
++Puppet::Type.type(:firewall).provide :ip6tables, :parent => :iptables, :source => :ip6tables do
+   @doc = "Ip6tables type provider"
+ 
+   has_feature :iptables
+@@ -48,7 +48,7 @@ Puppet::Type.type(:firewall).provide :ip
+     :burst => "--limit-burst",
+     :ctstate => "-m conntrack --ctstate",
+     :destination => "-d",
+-    :dport => "-m multiport --dports",
++    :dport => ["-m multiport --dports", "--dport"],
+     :gid => "-m owner --gid-owner",
+     :icmp => "-m icmp6 --icmpv6-type",
+     :iniface => "-i",
+@@ -72,13 +72,14 @@ Puppet::Type.type(:firewall).provide :ip
+     :rttl => "--rttl",
+     :source => "-s",
+     :state => "-m state --state",
+-    :sport => "-m multiport --sports",
++    :sport => ["-m multiport --sports", "--sport"],
+     :table => "-t",
+     :todest => "--to-destination",
+     :toports => "--to-ports",
+     :tosource => "--to-source",
+     :uid => "-m owner --uid-owner",
+     :pkttype => "-m pkttype --pkt-type",
++    :setdscp => "--set-dscp",
+     :ishasmorefrags => "-m frag --fragid 0 --fragmore",
+     :islastfrag => "-m frag --fragid 0 --fraglast",
+     :isfirstfrag => "-m frag --fragid 0 --fragfirst",
+@@ -126,6 +127,6 @@ Puppet::Type.type(:firewall).provide :ip
+     :proto, :ishasmorefrags, :islastfrag, :isfirstfrag, :gid, :uid, :sport, :dport,
+     :port, :pkttype, :name, :state, :ctstate, :icmp, :hop_limit, :limit, :burst,
+     :recent, :rseconds, :reap, :rhitcount, :rttl, :rname, :rsource, :rdest,
+-    :jump, :todest, :tosource, :toports, :log_level, :log_prefix, :reject]
++    :jump, :todest, :tosource, :toports, :log_level, :log_prefix, :reject, :setdscp]
+ 
+ end
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/lib/puppet/provider/firewall/iptables.rb ../../target/puppet/firewall/lib/puppet/provider/firewall/iptables.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/lib/puppet/provider/firewall/iptables.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/lib/puppet/provider/firewall/iptables.rb	2019-03-13 13:22:49.000000000 +0000
+@@ -79,6 +79,9 @@ Puppet::Type.type(:firewall).provide :ip
+     :src_range => "-m iprange --src-range",
+     :sport => ["-m multiport --sports", "--sport"],
+     :state => "-m state --state",
++    :string => "-m string --string",
++    :string_algo => "--algo",
++    :string_to => "--to",
+     :table => "-t",
+     :tcp_flags => "-m tcp --tcp-flags",
+     :todest => "--to-destination",
+@@ -87,6 +90,7 @@ Puppet::Type.type(:firewall).provide :ip
+     :uid => "-m owner --uid-owner",
+     :pkttype => "-m pkttype --pkt-type",
+     :isfragment => "-f",
++    :setdscp => "--set-dscp",
+     :ipsec_dir => "-m policy --dir",
+     :ipsec_policy => "--pol",
+   }
+@@ -138,10 +142,10 @@ Puppet::Type.type(:firewall).provide :ip
+   @resource_list = [
+     :table, :source, :destination, :iniface, :outiface, :proto, :isfragment,
+     :src_range, :dst_range, :tcp_flags, :gid, :uid, :sport, :dport, :port,
+-    :dst_type, :src_type, :socket, :pkttype, :name, :ipsec_dir, :ipsec_policy,
++    :dst_type, :src_type, :socket, :pkttype, :name, :ipsec_dir, :ipsec_policy, :string, :string_algo, :string_to,
+     :state, :ctstate, :icmp, :limit, :burst, :recent, :rseconds, :reap,
+     :rhitcount, :rttl, :rname, :rsource, :rdest, :jump, :todest, :tosource,
+-    :toports, :random, :log_prefix, :log_level, :reject, :set_mark
++    :toports, :random, :log_prefix, :log_level, :reject, :set_mark, :setdscp
+   ]
+ 
+   def insert
+@@ -156,7 +160,18 @@ Puppet::Type.type(:firewall).provide :ip
+ 
+   def delete
+     debug 'Deleting rule %s' % resource[:name]
+-    iptables delete_args
++    begin
++       debug 'trying delete_args first'
++       iptables delete_args
++    rescue
++      begin
++           debug 'now trying delete_args_check'
++           iptables delete_args_check
++      rescue
++           debug 'ipv6 proto=all check'
++           iptables delete_args_check_proto_v6
++      end
++    end
+   end
+ 
+   def exists?
+@@ -370,6 +385,26 @@ Puppet::Type.type(:firewall).provide :ip
+     line.unshift("-t", properties[:table])
+   end
+ 
++  def delete_args_check
++    # Split into arguments
++    line = properties[:line].gsub(/\-A/, '-D').split(/\s(?=(?:[^"]|"[^"]*")*$)/).map{|v| v.gsub(/"/, '')}
++    if (properties[:name] == "999 drop all v6" or properties[:name] == "1999 drop all v6" or
++        properties[:name] == "990 related established v6" or properties[:name] == "1990 related established v6" or
++        properties[:name] == "991 local loop v6" or properties[:name] == "1991 local loop v6") then
++        line = line  << "-p" + properties[:proto]
++    end
++    line.unshift("-t", properties[:table])
++  end
++
++  def delete_args_check_proto_v6
++    # Split into arguments
++    line = properties[:line].gsub(/\-A/, '-D').split(/\s(?=(?:[^"]|"[^"]*")*$)/).map{|v| v.gsub(/"/, '')}
++    if (self.class.instance_variable_get(:@protocol) == "IPv6" and properties[:proto] == "all") then
++        line = line  << "-p" + properties[:proto]
++    end
++    line.unshift("-t", properties[:table])
++  end
++
+   # This method takes the resource, and attempts to generate the command line
+   # arguments for iptables.
+   def general_args
+@@ -414,6 +449,11 @@ Puppet::Type.type(:firewall).provide :ip
+       # For sport and dport, convert hyphens to colons since the type
+       # expects hyphens for ranges of ports.
+       if [:sport, :dport, :port].include?(res) then
++        # For sport and dport with single ports, drop the multiport module
++        if resource[res].length == 1 and not resource[res].to_s.include?('-') then
++          args.pop
++          args << "--" + res.to_s
++        end
+         resource_value = resource_value.collect do |elem|
+           elem.gsub(/-/, ':')
+         end
+@@ -433,6 +473,20 @@ Puppet::Type.type(:firewall).provide :ip
+       end
+     end
+ 
++    # In the case where there are multiport sports/dports and a single dport
++    # in the rule. Due to the resource ordering (sport followed by dport), the
++    # multiport sports rule will always be ordered before it. This will result
++    # in invalid syntax. The below swaps the sport with dport positions (in the
++    # array) for this case.
++    if args.include?(['-m', 'multiport' ,'--sports']) and args.include?('--dport') then
++      if args.find_index(['-m', 'multiport', '--sports']) < args.find_index('--dport') then
++        old_pos = args.find_index('--dport')
++        new_pos = args.find_index(['-m', 'multiport','--sports'])
++        args.insert(new_pos, args.delete_at(old_pos))
++        args.insert(new_pos+1, args.delete_at(old_pos+1))
++      end
++    end
++
+     args
+   end
+ 
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/lib/puppet/type/firewall.rb ../../target/puppet/firewall/lib/puppet/type/firewall.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/lib/puppet/type/firewall.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/lib/puppet/type/firewall.rb	2019-03-13 13:22:49.000000000 +0000
+@@ -465,6 +465,31 @@ Puppet::Type.newtype(:firewall) do
+     newvalues(:true, :false)
+   end
+ 
++  newproperty(:setdscp) do
++    desc <<-EOS
++      For DSCP set DSCP.
++    EOS
++  end
++
++  newproperty(:string) do
++    desc <<-EOS
++       String matching feature. Matches the packet against the pattern
++       given as an argument.
++    EOS
++  end
++
++  newproperty(:string_algo) do
++    desc <<-EOS
++      String matching feature, pattern matching strategy.
++    EOS
++  end
++
++  newproperty(:string_to) do
++    desc <<-EOS
++      String matching feature, offset up to which we should scan.
++    EOS
++  end
++
+   # Reject ICMP type
+   newproperty(:reject, :required_features => :reject_type) do
+     desc <<-EOS
+@@ -992,6 +1017,13 @@ Puppet::Type.newtype(:firewall) do
+       end
+     end
+ 
++    if value(:jump).to_s == "DSCP"
++      unless value(:setdscp)
++        self.fail "Parameter jump => DSCP missing mandatory setdscp " \
++          "parameter"
++      end
++    end
++
+     if value(:jump).to_s == "MASQUERADE"
+       unless value(:table).to_s =~ /nat/
+         self.fail "Parameter jump => MASQUERADE only applies to table => nat"
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/metadata.json ../../target/puppet/firewall/metadata.json
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/metadata.json	2014-03-05 00:22:40.000000000 +0000
++++ ../../target/puppet/firewall/metadata.json	2019-03-13 13:22:49.000000000 +0000
+@@ -164,6 +164,22 @@
+           "doc": "When using a jump value of \"MASQUERADE\", \"DNAT\", \"REDIRECT\", or \"SNAT\"\nthis boolean will enable randomized port mapping.\n\nValid values are `true`, `false`. \n\nRequires features dnat."
+         },
+         {
++          "name": "setdscp",
++          "doc": "For DSCP this is the value that will be set.\n  Requires features dscp."
++        },
++        {
++          "name": "string",
++          "doc": "String pattern matching functionality, which allows limited investigation of the packet payload."
++        },
++        {
++          "name": "string_algo",
++          "doc": "Algorithm used for the string pattern matching functionality."
++        },
++        {
++          "name": "string_to",
++          "doc": " String matching feature, offset up to which we should scan."
++        },
++        {
+           "name": "reject",
+           "doc": "When combined with jump => \"REJECT\" you can specify a different icmp\nresponse to be sent back to the packet sender.\n\n\n\nRequires features reject_type."
+         },
+@@ -398,4 +414,4 @@
+     "spec/unit/puppet/util/firewall_spec.rb": "fc2679265def001f3531817c1f34d4b9",
+     "spec/unit/puppet/util/ipcidr_spec.rb": "1a6eeb2dd7c9634fcfb60d8ead6e1d79"
+   }
+-}
+\ No newline at end of file
++}
+diff -rupN ../../../target/deps/puppetlabs-firewall-1.0.2/spec/acceptance/purge_spec.rb ../../target/puppet/firewall/spec/acceptance/purge_spec.rb
+--- ../../../target/deps/puppetlabs-firewall-1.0.2/spec/acceptance/purge_spec.rb	2014-03-05 00:22:36.000000000 +0000
++++ ../../target/puppet/firewall/spec/acceptance/purge_spec.rb	2019-03-13 13:22:49.000000000 +0000
+@@ -29,7 +29,10 @@ describe "purge tests:" do
+     end
+   end
+ 
+-  context('chain purge') do
++  context('ipv4 chain purge') do
++    after(:all) do
++      iptables_flush_all_tables
++    end
+     before(:each) do
+       iptables_flush_all_tables
+ 
+@@ -121,4 +124,109 @@ describe "purge tests:" do
+       expect(shell('iptables-save').stdout).to match(/-A INPUT -s 1\.2\.1\.1(\/32)? -p tcp\s?\n-A INPUT -s 1\.2\.1\.1(\/32)? -p udp/)
+     end
+   end
+-end
++
++  context('chain purge') do
++    after(:all) do
++      ip6tables_flush_all_tables
++    end
++    before(:each) do
++      ip6tables_flush_all_tables
++
++      shell('ip6tables -A INPUT -p tcp -s 1::42')
++      shell('ip6tables -A INPUT -p udp -s 1::42')
++      shell('ip6tables -A OUTPUT -s 1::50 -m comment --comment "010 output-1::50"')
++    end
++
++    it 'purges only the specified chain' do
++      pp = <<-EOS
++        class { 'firewall': }
++        firewallchain { 'INPUT:filter:IPv6':
++          purge => true,
++        }
++      EOS
++
++      apply_manifest(pp, :expect_changes => true)
++
++      shell('ip6tables-save') do |r|
++        expect(r.stdout).to match(/010 output-1::50/)
++        expect(r.stdout).to_not match(/1::42/)
++        expect(r.stderr).to eq("")
++      end
++    end
++
++    it 'ignores managed rules' do
++      pp = <<-EOS
++        class { 'firewall': }
++        firewallchain { 'OUTPUT:filter:IPv6':
++          purge => true,
++        }
++        firewall { '010 output-1::50':
++          chain  => 'OUTPUT',
++          proto  => 'all',
++          source => '1::50',
++        }
++      EOS
++
++      unless fact('selinux') == 'true'
++        apply_manifest(pp, :catch_changes => true)
++      end
++    end
++
++    it 'ignores specified rules' do
++      pp = <<-EOS
++        class { 'firewall': }
++        firewallchain { 'INPUT:filter:IPv6':
++          purge => true,
++          ignore => [
++            '-s 1::42',
++          ],
++        }
++      EOS
++
++      if fact('selinux') == 'true'
++        apply_manifest(pp, :catch_failures => true)
++      else
++        apply_manifest(pp, :catch_changes => true)
++      end
++    end
++
++    it 'adds managed rules with ignored rules' do
++      pp = <<-EOS
++        class { 'firewall': }
++        firewallchain { 'INPUT:filter:IPv6':
++          purge => true,
++          ignore => [
++            '-s 1::42',
++          ],
++        }
++        firewall { '014 input-1::46':
++          chain    => 'INPUT',
++          proto    => 'all',
++          source   => '1::46',
++          provider => 'ip6tables',
++        }
++        -> firewall { '013 input-1::45':
++          chain    => 'INPUT',
++          proto    => 'all',
++          source   => '1::45',
++          provider => 'ip6tables',
++        }
++        -> firewall { '012 input-1::44':
++          chain    => 'INPUT',
++          proto    => 'all',
++          source   => '1::44',
++          provider => 'ip6tables',
++        }
++        -> firewall { '011 input-1::43':
++          chain    => 'INPUT',
++          proto    => 'all',
++          source   => '1::43',
++          provider => 'ip6tables',
++        }
++      EOS
++
++      apply_manifest(pp, :catch_failures => true)
++
++      expect(shell('ip6tables-save').stdout).to match(/-A INPUT -s 1::42(\/128)? -p tcp\s?\n-A INPUT -s 1::42(\/128)? -p udp/)
++    end
++  end

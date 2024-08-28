@@ -1,0 +1,324 @@
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_exchange/rabbitmqadmin.rb ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_exchange/rabbitmqadmin.rb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_exchange/rabbitmqadmin.rb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_exchange/rabbitmqadmin.rb	2016-01-12 12:38:18.000000000 +0100
+@@ -1,9 +1,12 @@
+ require 'puppet'
+ Puppet::Type.type(:rabbitmq_exchange).provide(:rabbitmqadmin) do
+ 
++  commands :rabbitmqctl => '/usr/sbin/rabbitmqctl'
+   commands :rabbitmqadmin => '/usr/local/bin/rabbitmqadmin'
+   defaultfor :feature => :posix
+ 
++  mk_resource_methods
++
+   def should_vhost
+     if @should_vhost
+       @should_vhost
+@@ -12,29 +15,49 @@ Puppet::Type.type(:rabbitmq_exchange).pr
+     end
+   end
+ 
++  def self.all_vhosts
++    vhosts = []
++    parse_command(rabbitmqctl('-q', 'list_vhosts'), 0).collect do |vhost|
++        vhosts.push(vhost)
++    end
++    vhosts
++  end
++
++  def self.all_exchanges(vhost)
++    exchanges = []
++    parse_command(rabbitmqctl('-q', 'list_exchanges', '-p', vhost, 'name', 'type'), 1)
++  end
++
++  def self.parse_command(cmd_output, first_useful_line)
++    # first two lines are:
++    # Listing exchanges ...
++    # 	direct (only for list_exchanges command)
++    # while the last line is
++    # ...done.
++    #
++    cmd_output.split(/\n/)[first_useful_line..-1]
++  end
++
+   def self.instances
+     resources = []
+-    rabbitmqadmin('list', 'exchanges').split(/\n/)[3..-2].collect do |line|
+-      if line =~ /^\|\s+(\S+)\s+\|\s+(\S+)?\s+\|\s+(\S+)\s+\|\s+(\S+)\s+\|\s+(\S+)\s+\|\s+(\S+)\s+\|$/
+-        entry = {
+-          :ensure => :present,
+-          :name   => "%s@%s" % [$2, $1],
+-          :type   => $3
+-        }
+-        resources << new(entry) if entry[:type]
+-      else
+-        raise Puppet::Error, "Cannot parse invalid exchange line: #{line}"
+-      end
++    all_vhosts.each do |vhost|
++        all_exchanges(vhost).collect do |line|
++            name, type = line.split()
++            exchange = {
++              :type   => type,
++              :ensure => :present,
++              :name   => "%s@%s" % [name, vhost],
++            }
++            resources << new(exchange) if exchange[:type]
++        end
+     end
+     resources
+   end
+ 
+-
+   def self.prefetch(resources)
+-    packages = instances
+-    resources.keys.each do |name|
+-      if provider = packages.find{ |pkg| pkg.name == name }
+-        resources[name].provider = provider
++    instances.each do |prov|
++      if resource = resources[prov.name]
++        resource.provider = prov
+       end
+     end
+   end
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_user/rabbitmqctl.rb ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_user/rabbitmqctl.rb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_user/rabbitmqctl.rb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_user/rabbitmqctl.rb	2016-01-12 12:38:18.000000000 +0100
+@@ -12,7 +12,7 @@ Puppet::Type.type(:rabbitmq_user).provid
+   defaultfor :feature => :posix
+ 
+   def self.instances
+-    rabbitmqctl('list_users').split(/\n/)[1..-2].collect do |line|
++    rabbitmqctl('-q', 'list_users').split(/\n/).collect do |line|
+       if line =~ /^(\S+)(\s+\S+|)$/
+         new(:name => $1)
+       else
+@@ -33,7 +33,7 @@ Puppet::Type.type(:rabbitmq_user).provid
+   end
+ 
+   def exists?
+-    rabbitmqctl('list_users').split(/\n/)[1..-2].detect do |line|
++    rabbitmqctl('-q', 'list_users').split(/\n/).detect do |line|
+       line.match(/^#{Regexp.escape(resource[:name])}(\s+\S+|)$/)
+     end
+   end
+@@ -41,7 +41,7 @@ Puppet::Type.type(:rabbitmq_user).provid
+   # def password
+   # def password=()
+   def admin
+-    match = rabbitmqctl('list_users').split(/\n/)[1..-2].collect do |line|
++    match = rabbitmqctl('-q', 'list_users').split(/\n/).collect do |line|
+       line.match(/^#{Regexp.escape(resource[:name])}\s+\[(administrator)?\]/)
+     end.compact.first
+     if match
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_user_permissions/rabbitmqctl.rb ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_user_permissions/rabbitmqctl.rb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_user_permissions/rabbitmqctl.rb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_user_permissions/rabbitmqctl.rb	2016-01-12 12:38:18.000000000 +0100
+@@ -15,7 +15,7 @@ Puppet::Type.type(:rabbitmq_user_permiss
+     @users = {} unless @users
+     unless @users[name]
+       @users[name] = {}
+-      rabbitmqctl('list_user_permissions', name).split(/\n/)[1..-2].each do |line|
++      rabbitmqctl('-q', 'list_user_permissions', name).split(/\n/).each do |line|
+         if line =~ /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/
+           @users[name][$1] =
+             {:configure => $2, :read => $4, :write => $3}
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_vhost/rabbitmqctl.rb ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_vhost/rabbitmqctl.rb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/provider/rabbitmq_vhost/rabbitmqctl.rb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/lib/puppet/provider/rabbitmq_vhost/rabbitmqctl.rb	2016-01-12 12:38:18.000000000 +0100
+@@ -9,7 +9,7 @@ Puppet::Type.type(:rabbitmq_vhost).provi
+   end
+ 
+   def self.instances
+-    rabbitmqctl('list_vhosts').split(/\n/)[1..-2].map do |line|
++    rabbitmqctl('-q', 'list_vhosts').split(/\n/).map do |line|
+       if line =~ /^(\S+)$/
+         new(:name => $1)
+       else
+@@ -27,7 +27,7 @@ Puppet::Type.type(:rabbitmq_vhost).provi
+   end
+ 
+   def exists?
+-    out = rabbitmqctl('list_vhosts').split(/\n/)[1..-2].detect do |line|
++    out = rabbitmqctl('-q', 'list_vhosts').split(/\n/).detect do |line|
+       line.match(/^#{Regexp.escape(resource[:name])}$/)
+     end
+   end
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/type/rabbitmq_exchange.rb ../../target/puppet/rabbitmq/lib/puppet/type/rabbitmq_exchange.rb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/lib/puppet/type/rabbitmq_exchange.rb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/lib/puppet/type/rabbitmq_exchange.rb	2016-01-12 12:38:18.000000000 +0100
+@@ -16,7 +16,7 @@ Puppet::Type.newtype(:rabbitmq_exchange)
+     newvalues(/^\S*@\S+$/)
+   end
+ 
+-  newparam(:type) do
++  newproperty(:type) do
+     desc 'Exchange type to be set *on creation*'
+     newvalues(/^\S+$/)
+   end
+@@ -33,12 +33,6 @@ Puppet::Type.newtype(:rabbitmq_exchange)
+     newvalues(/\S+/)
+   end
+ 
+-  validate do
+-    if self[:ensure] == :present and self[:type].nil?
+-      raise ArgumentError, "must set type when creating exchange for #{self[:name]} whose type is #{self[:type]}"
+-    end
+-  end
+-
+   autorequire(:rabbitmq_vhost) do
+     [self[:name].split('@')[1]]
+   end
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/init.pp ../../target/puppet/rabbitmq/manifests/init.pp
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/init.pp	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/manifests/init.pp	2016-01-12 12:38:18.000000000 +0100
+@@ -72,7 +72,8 @@ class rabbitmq(
+   validate_re($management_port, '\d+')
+   validate_string($node_ip_address)
+   validate_absolute_path($plugin_dir)
+-  validate_re($port, '\d+')
++# commented out to avoid having the amqp port in rabbitmq-env.conf
++#  validate_re($port, '\d+')
+   validate_re($stomp_port, '\d+')
+   validate_bool($wipe_db_on_cookie_change)
+   # Validate service parameters.
+@@ -101,15 +102,6 @@ class rabbitmq(
+   include '::rabbitmq::service'
+   include '::rabbitmq::management'
+ 
+-  case $::osfamily {
+-    'RedHat', 'SUSE':
+-      { include '::rabbitmq::repo::rhel' }
+-    'Debian':
+-      { include '::rabbitmq::repo::apt' }
+-    default:
+-      { }
+-  }
+-
+   if $admin_enable and $service_manage {
+     include '::rabbitmq::install::rabbitmqadmin'
+ 
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/install.pp ../../target/puppet/rabbitmq/manifests/install.pp
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/install.pp	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/manifests/install.pp	2016-01-12 12:38:18.000000000 +0100
+@@ -12,11 +12,4 @@ class rabbitmq::install {
+     notify   => Class['rabbitmq::service'],
+   }
+ 
+-  if $package_source {
+-    Package['rabbitmq-server'] {
+-      source  => $package_source,
+-      require => Class['rabbitmq::repo::rhel'],
+-    }
+-  }
+-
+ }
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/params.pp ../../target/puppet/rabbitmq/manifests/params.pp
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/params.pp	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/manifests/params.pp	2016-01-12 12:38:18.000000000 +0100
+@@ -24,7 +24,7 @@ class rabbitmq::params {
+     }
+     'RedHat', 'SUSE': {
+       $package_ensure   = 'installed'
+-      $package_name     = 'rabbitmq-server'
++      $package_name     = 'EXTRlitprabbitmqserver_CXP9031043'
+       $service_name     = 'rabbitmq-server'
+       $package_provider = 'rpm'
+       $version          = '3.1.5-1'
+@@ -63,7 +63,7 @@ class rabbitmq::params {
+   $manage_service             = true
+   $node_ip_address            = 'UNSET'
+   $plugin_dir                 = "/usr/lib/rabbitmq/lib/rabbitmq_server-${version}/plugins"
+-  $port                       = '5672'
++  $port                       = ''
+   $ssl                        = false
+   $ssl_cacert                 = 'UNSET'
+   $ssl_cert                   = 'UNSET'
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/repo/rhel.pp ../../target/puppet/rabbitmq/manifests/repo/rhel.pp
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/manifests/repo/rhel.pp	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/manifests/repo/rhel.pp	2016-01-12 12:38:18.000000000 +0100
+@@ -2,7 +2,7 @@ class rabbitmq::repo::rhel {
+ 
+   $package_gpg_key = $rabbitmq::package_gpg_key
+ 
+-  Class['rabbitmq::repo::rhel'] -> Package<| title == 'rabbitmq-server' |>
++  Class['rabbitmq::repo::rhel'] -> Package<| title == 'EXTRlitprabbitmqserver_CXP9031043' |>
+ 
+   exec { "rpm --import ${package_gpg_key}":
+     path   => ['/bin','/usr/bin','/sbin','/usr/sbin'],
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/spec/classes/rabbitmq_spec.rb ../../target/puppet/rabbitmq/spec/classes/rabbitmq_spec.rb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/spec/classes/rabbitmq_spec.rb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/spec/classes/rabbitmq_spec.rb	2016-01-12 12:38:18.000000000 +0100
+@@ -345,9 +345,9 @@ describe 'rabbitmq' do
+     let(:facts) {{ :osfamily => 'RedHat' }}
+     let(:params) {{ :package_source => 'http://www.rabbitmq.com/releases/rabbitmq-server/v3.2.3/rabbitmq-server-3.2.3-1.noarch.rpm' }}
+     it 'installs the rabbitmq package' do
+-      should contain_package('rabbitmq-server').with(
++      should contain_package('EXTRlitprabbitmqserver_CXP9031043').with(
+         'ensure'   => 'installed',
+-        'name'     => 'rabbitmq-server',
++        'name'     => 'EXTRlitprabbitmqserver_CXP9031043',
+         'provider' => 'rpm',
+         'source'   => 'http://www.rabbitmq.com/releases/rabbitmq-server/v3.2.3/rabbitmq-server-3.2.3-1.noarch.rpm'
+       )
+diff -rupN ../../../target/deps/puppetlabs-rabbitmq-3.1.0/templates/rabbitmq.config.erb ../../target/puppet/rabbitmq/templates/rabbitmq.config.erb
+--- ../../../target/deps/puppetlabs-rabbitmq-3.1.0/templates/rabbitmq.config.erb	2013-10-15 18:42:46.000000000 +0200
++++ ../../target/puppet/rabbitmq/templates/rabbitmq.config.erb	2016-01-12 12:40:57.000000000 +0100
+@@ -1,18 +1,23 @@
+ % This file managed by Puppet
+ % Template Path: <%= @module_name %>/templates/rabbitmq.config
+ [
++<%- if @ssl %>
++  {ssl, [{versions, ['tlsv1.2']}]},
++<%- end -%>
+   {rabbit, [
++    {tcp_listeners, [{"127.0.0.1", 5672}, {"::1", 5672}]},
+ <% if @config_cluster -%>
+     {cluster_nodes, {[<%= @_cluster_nodes.map { |n| "\'rabbit@#{n}\'" }.join(', ') %>], <%= @cluster_node_type %>}},
+     {cluster_partition_handling, <%= @cluster_partition_handling %>},
+ <% end -%>
+ <%- if @ssl %>
+-    {ssl_listeners, [<%= @ssl_management_port %>]},
++    {ssl_listeners, []},
+     {ssl_options, [{cacertfile,"<%= @ssl_cacert %>"},
+                     {certfile,"<%= @ssl_cert %>"},
+                     {keyfile,"<%= @ssl_key %>"},
+-                    {verify,verify_none},
+-                    {fail_if_no_peer_cert,false}]},
++                    {verify,verify_peer},
++                    {fail_if_no_peer_cert,true},
++                    {versions, ['tlsv1.2']}]},
+ <%- end -%>
+ <% if @config_variables -%>
+ <%- @config_variables.keys.sort.each do |key| -%>
+@@ -25,11 +30,29 @@
+ <% if @config_stomp -%>,
+ % Configure the Stomp Plugin listening port
+   {rabbitmq_stomp, [
+-    {tcp_listeners, [<%= @stomp_port %>]}
++    {tcp_listeners, [{"::", <%= @stomp_port %>}]}
+   <%- if @ssl_stomp_port -%>,
+-    {ssl_listeners, [<%= @ssl_stomp_port %>]}
++    {ssl_listeners, [{"::", <%= @ssl_stomp_port %>}]}
++,
+   <%- end -%>
++    {ssl_options, [{cacertfile,"<%= @ssl_cacert %>"},
++                    {certfile,"<%= @ssl_cert %>"},
++                    {keyfile,"<%= @ssl_key %>"},
++                    {verify_peer},
++                    {fail_if_no_peer_cert,true},
++                    {versions, ['tlsv1.2']}]}
+   ]}
++,
++% Configure the Management Plugin listening interface
++  {rabbitmq_management, [
++      {listener, [
++        {ip, "127.0.0.1"},
++        {port, 15672}
++      ]}
++    ]}
++,
++% Configure the Clustering listening interface
++  {kernel, [{inet_dist_use_interface, {127,0,0,1}}]}
+ <%- end -%>
+ ].
+ % EOF

@@ -1,0 +1,78 @@
+diff -uNr /home/geoff/3pp_repackaging/sources/garethr-erlang-0.2.0/manifests/params.pp ../../../puppet/erlang/manifests/params.pp
+--- /home/geoff/3pp_repackaging/sources/garethr-erlang-0.2.0/manifests/params.pp	2013-09-14 12:56:13.000000000 +0100
++++ ../../../puppet/erlang/manifests/params.pp	2014-08-27 11:41:42.000000000 +0100
+@@ -15,7 +15,7 @@
+       $repos                    = 'contrib'
+     }
+     'RedHat', 'SUSE', 'Archlinux' : {
+-      $package_name = 'erlang'
++      $package_name = 'EXTRlitperlang_CXP9031333'
+ 
+       if $::operatingsystemrelease =~ /^5/ {
+         $local_repo_location  = '/etc/yum.repos.d/epel-erlang.repo'
+diff -uNr /home/geoff/3pp_repackaging/sources/garethr-erlang-0.2.0/spec/classes/erlang_spec.rb ../../../puppet/erlang/spec/classes/erlang_spec.rb
+--- /home/geoff/3pp_repackaging/sources/garethr-erlang-0.2.0/spec/classes/erlang_spec.rb	2013-09-14 12:56:13.000000000 +0100
++++ ../../../puppet/erlang/spec/classes/erlang_spec.rb	2014-08-27 11:41:42.000000000 +0100
+@@ -54,7 +54,7 @@
+     end
+ 
+     context 'with no parameters' do
+-      it { should contain_package('erlang').with_ensure('present') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('present') }
+       it { should contain_exec('erlang-repo-download').with(
+         'command' => 'curl -o /etc/yum.repos.d/epel-erlang.repo http://repos.fedorapeople.org/repos/peter/erlang/epel-erlang.repo',
+         'path'    => '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin'
+@@ -76,7 +76,7 @@
+ 
+     context 'with a custom version' do
+       let(:params) { {'version' => 'absent' } }
+-      it { should contain_package('erlang').with_ensure('absent') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('absent') }
+     end
+   end
+ 
+@@ -94,12 +94,12 @@
+     end
+ 
+     context 'with no parameters' do
+-      it { should contain_package('erlang').with_ensure('present') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('present') }
+     end
+ 
+     context 'with a custom version' do
+       let(:params) { {'version' => 'absent' } }
+-      it { should contain_package('erlang').with_ensure('absent') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('absent') }
+     end
+   end
+ 
+@@ -107,12 +107,12 @@
+     let(:facts) {{ :osfamily => 'SUSE', }}
+ 
+     context 'with no parameters' do
+-      it { should contain_package('erlang').with_ensure('present') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('present') }
+     end
+ 
+     context 'with a custom version' do
+       let(:params) { {'version' => 'absent' } }
+-      it { should contain_package('erlang').with_ensure('absent') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('absent') }
+     end
+   end
+ 
+@@ -120,12 +120,12 @@
+     let(:facts) {{ :osfamily => 'Archlinux', }}
+ 
+     context 'with no parameters' do
+-      it { should contain_package('erlang').with_ensure('present') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('present') }
+     end
+ 
+     context 'with a custom version' do
+       let(:params) { {'version' => 'absent' } }
+-      it { should contain_package('erlang').with_ensure('absent') }
++      it { should contain_package('EXTRlitperlang_CXP9031333').with_ensure('absent') }
+     end
+   end
+ 

@@ -1,0 +1,149 @@
+diff -rupN ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/facter/lvm_support.rb ../../target/puppet/lvm/lib/facter/lvm_support.rb
+--- ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/facter/lvm_support.rb	2014-02-04 18:28:40.000000000 +0000
++++ ../../target/puppet/lvm/lib/facter/lvm_support.rb	2021-10-20 10:35:41.000000000 +0100
+@@ -5,7 +5,7 @@ Facter.add('lvm_support') do
+ 
+   setcode do
+     vgdisplay = Facter::Util::Resolution.which('vgs')
+-    vgdisplay.nil? ? nil : true
++    vgdisplay.to_s.empty? ? nil : true
+   end
+ end
+ 
+@@ -15,7 +15,7 @@ vg_list = []
+ Facter.add('lvm_vgs') do
+   confine :lvm_support => true
+   vgs = Facter::Util::Resolution.exec('vgs -o name --noheadings 2>/dev/null')
+-  if vgs.nil?
++  if vgs.to_s.empty?
+     setcode { 0 }
+   else
+     vg_list = vgs.split
+@@ -35,7 +35,7 @@ pv_list = []
+ Facter.add('lvm_pvs') do
+   confine :lvm_support => true
+   pvs = Facter::Util::Resolution.exec('pvs -o name --noheadings 2>/dev/null')
+-  if pvs.nil?
++  if pvs.to_s.empty?
+     setcode { 0 }
+   else
+     pv_list = pvs.split
+diff -rupN ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/provider/logical_volume/lvm.rb ../../target/puppet/lvm/lib/puppet/provider/logical_volume/lvm.rb
+--- ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/provider/logical_volume/lvm.rb	2014-02-04 18:28:40.000000000 +0000
++++ ../../target/puppet/lvm/lib/puppet/provider/logical_volume/lvm.rb	2021-10-20 10:44:38.622428019 +0100
+@@ -35,7 +35,7 @@ Puppet::Type.type(:logical_volume).provi
+         if @resource[:stripesize]
+             args.push('--stripesize', @resource[:stripesize])
+         end
+-
++        args.push('-W', 'y', '-y')
+         args << @resource[:volume_group]
+         lvcreate(*args)
+     end
+@@ -112,9 +112,9 @@ Puppet::Type.type(:logical_volume).provi
+ 
+             blkid_type = blkid(path)
+             if command(:resize4fs) and blkid_type =~ /\bTYPE=\"(ext4)\"/
+-              resize4fs( path) || fail( "Cannot resize file system to size #{new_size} because resize2fs failed." )
++              resize4fs( '-f', path) || fail( "Cannot resize file system to size #{new_size} because resize2fs failed." )
+             elsif blkid_type =~ /\bTYPE=\"(ext[34])\"/
+-              resize2fs( path) || fail( "Cannot resize file system to size #{new_size} because resize2fs failed." )
++              resize2fs( '-f', path) || fail( "Cannot resize file system to size #{new_size} because resize2fs failed." )
+             elsif blkid_type =~ /\bTYPE=\"(xfs)\"/
+               xfs_growfs( path) || fail( "Cannot resize filesystem to size #{new_size} because xfs_growfs failed." )
+             end
+diff -rupN ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/provider/physical_volume/lvm.rb ../../target/puppet/lvm/lib/puppet/provider/physical_volume/lvm.rb
+--- ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/provider/physical_volume/lvm.rb	2014-02-04 18:28:40.000000000 +0000
++++ ../../target/puppet/lvm/lib/puppet/provider/physical_volume/lvm.rb	2021-10-20 10:35:41.000000000 +0100
+@@ -8,7 +8,7 @@ Puppet::Type.type(:physical_volume).prov
+     end
+ 
+     def destroy
+-        pvremove(@resource[:name])
++        pvremove('-f', @resource[:name])
+     end
+ 
+     def exists?
+diff -rupN ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/provider/volume_group/lvm.rb ../../target/puppet/lvm/lib/puppet/provider/volume_group/lvm.rb
+--- ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/provider/volume_group/lvm.rb	2014-02-04 18:28:40.000000000 +0000
++++ ../../target/puppet/lvm/lib/puppet/provider/volume_group/lvm.rb	2021-10-20 10:35:41.000000000 +0100
+@@ -13,7 +13,7 @@ Puppet::Type.type(:volume_group).provide
+     end
+ 
+     def destroy
+-        vgremove(@resource[:name])
++        vgremove('-f', @resource[:name])
+     end
+ 
+     def exists?
+diff -rupN ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/type/volume_group.rb ../../target/puppet/lvm/lib/puppet/type/volume_group.rb
+--- ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/lib/puppet/type/volume_group.rb	2014-02-04 18:28:40.000000000 +0000
++++ ../../target/puppet/lvm/lib/puppet/type/volume_group.rb	2021-10-20 10:35:41.000000000 +0100
+@@ -10,6 +10,9 @@ Puppet::Type.newtype(:volume_group) do
+         desc "The list of physical volumes to be included in the volume group; this
+              will automatically set these as dependencies, but they must be defined elsewhere
+              using the physical_volume resource type."
++        def should=(values)
++            @should = super(values).sort
++        end
+     end
+ 
+     newparam(:createonly, :boolean => true) do
+diff -rupN ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/manifests/volume.pp ../../target/puppet/lvm/manifests/volume.pp
+--- ../../../target/deps/puppetlabs-lvm-a08cd3dc484ef503e813100331d7eb82ce173810/manifests/volume.pp	2014-02-04 18:28:40.000000000 +0000
++++ ../../target/puppet/lvm/manifests/volume.pp	2021-10-20 10:35:41.000000000 +0100
+@@ -59,8 +59,21 @@ define lvm::volume (
+   $fstype  = undef,
+   $size    = undef,
+   $extents = undef,
+-  $initial_size = undef
++  $initial_size = undef,
++  $remove_vg = undef,
++  $remove_pv = undef
+ ) {
++
++  #
++  # Check that all vars have non empty values
++  # $pv, $vg, $fstype, $extents, $initial_size
++  #
++  if $pv == '' or $pv == [''] {
++    err ( "ERROR: puppet-lvm::volume: $pv empty. Cannot get disk-id for UUID." )
++  } elsif $vg == '' {
++    err ( "ERROR: puppet-lvm::volume: $vg empty. Missing 'volume_group_name' parameter." )
++  } else {
++
+   case $ensure {
+     #
+     # Clean up the whole chain.
+@@ -88,7 +101,7 @@ define lvm::volume (
+       }
+     }
+     #
+-    # Just clean up the logical volume
++    # Clean up the logical-volume, volume-group and physical-volume
+     #
+     absent: {
+       logical_volume { $name:
+@@ -96,6 +109,14 @@ define lvm::volume (
+         volume_group => $vg,
+         size         => $size
+       }
++
++      if $remove_vg == 'true' {
++          ensure_resource('volume_group', $vg, { 'ensure' => $ensure })
++      }
++
++      if $remove_pv == 'true' {
++          ensure_resource('physical_volume', $pv, { 'ensure' => $ensure })
++      }
+     }
+     #
+     # Create the whole chain.
+@@ -134,5 +155,6 @@ define lvm::volume (
+     default: {
+       fail ( 'puppet-lvm::volume: ensure parameter can only be set to cleaned, absent or present' )
+     }
+-  }
++  } # endcase
++  } # endif
+ }

@@ -1,0 +1,69 @@
+diff -rupN ../../Builder/puppet-network-3.5.1/manifests/init.pp ../../target/puppet/network/manifests/init.pp
+--- ../../Builder/puppet-network-3.5.1/manifests/init.pp	2019-04-05 08:12:04.000000000 +0100
++++ ../../target/puppet/network/manifests/init.pp	2020-08-27 14:30:45.000000000 +0100
+@@ -79,7 +79,7 @@ class network (
+ 
+   $config_file_path          = $::network::params::config_file_path,
+   $config_file_require       = undef,
+-  $config_file_notify        = 'class_default',
++  $config_file_notify        = '',
+   $config_file_source        = undef,
+   $config_file_template      = undef,
+   $config_file_content       = undef,
+@@ -233,6 +233,13 @@ class network (
+     }
+   }
+ 
++  if $config_file_path {
++    tidy { '/etc/sysconfig/network-scripts':
++      matches  => ["route6-*"],
++      recurse  => true,
++    }
++  }
++
+   # Command that triggers network restart
+   exec { $service_restart_exec :
+     command     => $service_restart_exec,
+diff -rupN ../../Builder/puppet-network-3.5.1/manifests/interface.pp ../../target/puppet/network/manifests/interface.pp
+--- ../../Builder/puppet-network-3.5.1/manifests/interface.pp	2019-04-05 08:12:04.000000000 +0100
++++ ../../target/puppet/network/manifests/interface.pp	2020-08-27 14:30:45.000000000 +0100
+@@ -362,6 +362,7 @@ define network::interface (
+   # For bridging
+   $bridge_ports          = [ ],
+   $bridge_stp            = undef,
++  $bridging_opts         = undef,
+   $bridge_fd             = undef,
+   $bridge_maxwait        = undef,
+   $bridge_waitport       = undef,
+@@ -422,6 +423,8 @@ define network::interface (
+   $arp                   = undef,
+   $nozeroconf            = undef,
+   $linkdelay             = undef,
++  $delay                 = undef,
++  $device                = undef,
+   $check_link_down       = false,
+   $hotplug               = undef,
+   $persistent_dhclient   = undef,
+diff -rupN ../../Builder/puppet-network-3.5.1/templates/interface/RedHat.erb ../../target/puppet/network/templates/interface/RedHat.erb
+--- ../../Builder/puppet-network-3.5.1/templates/interface/RedHat.erb	2019-04-05 08:12:04.000000000 +0100
++++ ../../target/puppet/network/templates/interface/RedHat.erb	2020-08-28 11:58:03.653477655 +0100
+@@ -172,6 +172,9 @@ PHYSDEV="<%= @physdev %>"
+ <% if @bridge -%>
+ BRIDGE="<%= @bridge %>"
+ <% end -%>
++<% if @bridging_opts -%>
++BRIDGING_OPTS="<%= @bridging_opts %>"
++<% end -%>
+ <% if @bridge_stp -%>
+ STP="<%= @bridge_stp %>"
+ <% end -%>
+@@ -193,6 +196,9 @@ NOZEROCONF="<%= @nozeroconf %>"
+ <% if @linkdelay -%>
+ LINKDELAY="<%= @linkdelay %>"
+ <% end -%>
++<% if @delay -%>
++DELAY="<%= @delay %>"
++<% end -%>
+ <% if @hotplug -%>
+ HOTPLUG="<%= @hotplug %>"
+ <% end -%>

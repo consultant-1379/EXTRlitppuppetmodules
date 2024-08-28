@@ -1,0 +1,26 @@
+diff -rupN ../../../target/deps/puppetlabs-concat-1.1.2/manifests/fragment.pp ../../target/puppet/concat/manifests/fragment.pp
+--- ../../../target/deps/puppetlabs-concat-1.1.2/manifests/fragment.pp	2014-10-28 19:12:05.000000000 +0000
++++ ../../target/puppet/concat/manifests/fragment.pp	2015-01-27 14:12:41.907311201 +0000
+@@ -110,6 +110,14 @@ define concat::fragment(
+ 
+   # punt on group ownership until some point in the distant future when $::gid
+   # can be relied on to be present
++
++  if ($my_ensure == 'present') {
++    $watcher = Exec["concat_${target}"]
++  }
++  else {
++    $watcher = undef
++  }
++
+   file { "${fragdir}/fragments/${order}_${safe_name}":
+     ensure  => $safe_ensure,
+     owner   => $fragowner,
+@@ -119,6 +127,6 @@ define concat::fragment(
+     backup  => false,
+     replace => true,
+     alias   => "concat_fragment_${name}",
+-    notify  => Exec["concat_${target}"]
++    notify  => $watcher
+   }
+ }

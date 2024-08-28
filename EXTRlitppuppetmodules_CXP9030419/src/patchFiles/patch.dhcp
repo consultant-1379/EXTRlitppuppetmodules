@@ -1,0 +1,282 @@
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/manifests/failover.pp ../../target/puppet/dhcp/manifests/failover.pp
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/manifests/failover.pp	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/manifests/failover.pp	2015-03-03 09:38:08.000000000 +0000
+@@ -2,7 +2,7 @@ class dhcp::failover (
+   $role                = 'primary',
+   $address             = $ipaddress,
+   $peer_address,
+-  $port                = '519',
++  $port                = '647',
+   $max_response_delay  = '30',
+   $max_unacked_updates = '10',
+   $mclt                = '300',
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/manifests/init.pp ../../target/puppet/dhcp/manifests/init.pp
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/manifests/init.pp	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/manifests/init.pp	2015-03-03 09:39:05.581023437 +0000
+@@ -1,7 +1,8 @@
+ class dhcp (
+-  $dnsdomain,
+-  $nameservers,
++  $dnsdomain	       = undef,
++  $nameservers         = undef,
+   $ntpservers          = undef,
++  $domainsearch        = undef,
+   $dhcp_conf_header    = 'INTERNAL_TEMPLATE',
+   $dhcp_conf_ddns      = 'INTERNAL_TEMPLATE',
+   $dhcp_conf_ntp       = 'INTERNAL_TEMPLATE',
+@@ -17,10 +18,20 @@ class dhcp (
+   $default_lease_time  = 3600,
+   $max_lease_time      = 86400
+ ) {
++
+   #input validation
+-  validate_array($dnsdomain)
+-  validate_array($nameservers)
+-  validate_array($ntpservers)
++  if $dnsdomain {
++     validate_array($dnsdomain)
++  }
++  if $nameservers {
++     validate_array($nameservers)
++  }
++  if $ntpservers {
++     validate_array($ntpservers)
++  }
++  if $domainsearch {
++     validate_array($domainsearch)
++  }
+ 
+   include dhcp::params
+ 
+@@ -66,18 +77,24 @@ class dhcp (
+     default           => $dhcp_conf_extra,
+   }
+ 
+-  package { $packagename:
+-    ensure   => installed,
+-    provider => $operatingsystem ? {
+-      default => undef,
+-      darwin  => macports
++  if ! defined(Package[$packagename]) {
++
++    package { $packagename:
++      ensure   => installed,
++      provider => $operatingsystem ? {
++        default => undef,
++        darwin  => macports
++      }
+     }
+   }
+ 
++  if ! defined(File[$dhcp_dir]) {
+   file { $dhcp_dir:
+     mode    => '0755',
+     require => Package[$packagename],
+   }
++  }
++
+ 
+   # Only debian and ubuntu have this style of defaults for startup.
+   case $operatingsystem {
+@@ -119,11 +136,13 @@ class dhcp (
+     content => $dhcp_conf_ntp_real,
+     order   => 02,
+   }
+-  concat::fragment { 'dhcp-conf-ddns':
+-    target  => "${dhcp_dir}/dhcpd.conf",
+-    content => $dhcp_conf_ddns_real,
+-    order   => 10,
+-  }
++
++  #concat::fragment { 'dhcp-conf-ddns':
++  #  target  => "${dhcp_dir}/dhcpd.conf",
++  #  content => $dhcp_conf_ddns_real,
++  #  order   => 10,
++  #}
++
+   concat::fragment { 'dhcp-conf-pxe':
+     target  => "${dhcp_dir}/dhcpd.conf",
+     content => $dhcp_conf_pxe_real,
+@@ -175,3 +194,4 @@ class dhcp (
+   include dhcp::monitor
+ 
+ }
++
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/manifests/pool.pp ../../target/puppet/dhcp/manifests/pool.pp
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/manifests/pool.pp	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/manifests/pool.pp	2015-03-03 09:38:08.000000000 +0000
+@@ -1,11 +1,16 @@
+ define dhcp::pool (
+   $network,
+   $mask,
+-  $gateway     = '',
+-  $range       = '',
+-  $failover    = '',
+-  $options     = '',
+-  $parameters  = ''
++  $gateway       = '',
++  $range         = '',
++  $parameters    = '',
++  $options       = '',
++  $failover      = '',
++  $nameservers   = undef,
++  $dnsdomain     = undef,
++  $ntpservers    = undef,
++  $domainsearch  = undef,
++  $ensure
+ ) {
+ 
+   include dhcp::params
+@@ -13,8 +18,9 @@ define dhcp::pool (
+   $dhcp_dir = $dhcp::params::dhcp_dir
+ 
+   concat::fragment { "dhcp_pool_${name}":
+-    target  => "${dhcp_dir}/dhcpd.pools",
+-    content => template('dhcp/dhcpd.pool.erb'),
++    target      => "${dhcp_dir}/dhcpd.pools",
++    content     => template('dhcp/dhcpd.pool.erb'),
++    ensure      => $ensure,
+   }
+ 
+ }
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.ddns.erb ../../target/puppet/dhcp/templates/dhcpd.conf.ddns.erb
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.ddns.erb	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/dhcpd.conf.ddns.erb	2015-03-03 09:38:08.000000000 +0000
+@@ -20,3 +20,4 @@ zone <%= dom %>. {
+ ddns-update-style none;
+ <% end -%>
+ # END ddns (Dynamic DNS Updates)
++
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.failover.erb ../../target/puppet/dhcp/templates/dhcpd.conf.failover.erb
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.failover.erb	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/dhcpd.conf.failover.erb	2015-03-03 09:38:08.000000000 +0000
+@@ -14,3 +14,4 @@ failover peer "dhcp-failover" {
+ <% end -%>
+ }
+ # END DHCP Failover
++
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf-header.erb ../../target/puppet/dhcp/templates/dhcpd.conf-header.erb
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf-header.erb	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/dhcpd.conf-header.erb	2015-03-03 09:38:08.000000000 +0000
+@@ -3,6 +3,8 @@
+ # dhcpd.conf
+ # ----------
+ authoritative;
++deny duplicates;
++deny declines;
+ default-lease-time <%= @default_lease_time %>;
+ max-lease-time <%= @max_lease_time %>;
+ log-facility <%= @logfacility %>;
+@@ -10,9 +12,24 @@ log-facility <%= @logfacility %>;
+ # ----------
+ # Options
+ # ----------
+-option domain-name "<%= @dnsdomain.first %>";
+-option domain-name-servers <%= @nameservers.join(', ') %>;
+-option fqdn.no-client-update on;  # set the "O" and "S" flag bits
+-option fqdn.rcode2 255;
+-option pxegrub code 150 = text;
++<%if @domainsearch then-%>
++option domain-search "<%= @domainsearch.join('", "')-%>";
++<%end-%>
++<%if @nameservers-%>
++<%if @nameservers.kind_of?(Array)-%>
++option domain-name-servers <%= @nameservers.join(', ')-%>;
++<%else-%>
++option domain-name-servers <%= @nameservers-%>;
++<%end-%>
++<%end-%>
++<%
++=begin
++%>
++#option fqdn.no-client-update on;  # set the "O" and "S" flag bits
++#option fqdn.rcode2 255;
++#option pxegrub code 150 = text;
++<%
++=end
++%>
+ # END DHCP Header
++
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.ntp.erb ../../target/puppet/dhcp/templates/dhcpd.conf.ntp.erb
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.ntp.erb	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/dhcpd.conf.ntp.erb	2015-03-03 09:38:08.000000000 +0000
+@@ -1,7 +1,10 @@
++<% if @ntpservers %>
+ # BEGIN NTP Section
+-<% if @ntpservers -%>
++<% if @ntpservers.kind_of?(Array)-%>
+ option ntp-servers <%= @ntpservers.join(', ') %>;
+ <% else -%>
+-option ntp-servers none;
++option ntp-servers <%=@ntpservers%>;
+ <% end -%>
+ # END NTP Section
++<% end -%>
++
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.pxe.erb ../../target/puppet/dhcp/templates/dhcpd.conf.pxe.erb
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.conf.pxe.erb	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/dhcpd.conf.pxe.erb	2015-03-03 09:38:08.000000000 +0000
+@@ -1,6 +1,7 @@
+-# BEGIN PXE Section
+ <% if @pxeserver and @pxefilename then -%>
++# BEGIN PXE Section
+ next-server <%= @pxeserver %>;
+ filename "<%= @pxefilename %>";
+-<% end -%>
+ # END PXE Section
++<% end -%>
++
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.pool.erb ../../target/puppet/dhcp/templates/dhcpd.pool.erb
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/dhcpd.pool.erb	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/dhcpd.pool.erb	2015-03-03 09:38:08.000000000 +0000
+@@ -1,6 +1,7 @@
+-#################################
+-# <%= @name %> <%= @network %> <%= @mask %>
+-#################################
++
++##########################################
++# <%= @network %> <%= @mask %>
++##########################################
+ subnet <%= @network %> netmask <%= @mask %> {
+ <% if @range != '' or @failover != '' -%>
+   pool
+@@ -16,7 +17,7 @@ subnet <%= @network %> netmask <%= @mask
+   }
+ <% end -%>
+ 
+-  option subnet-mask <%= @mask %>;
++  option subnet-mask <%= @mask -%>;
+ <% if @gateway != '' -%>
+   option routers <%= @gateway %>;
+ <% end -%>
+@@ -34,5 +35,22 @@ subnet <%= @network %> netmask <%= @mask
+ <% elsif @parameters != '' -%>
+   <%= @parameters %>;
+ <% end -%>
+-}
+ 
++<%if @domainsearch then-%>
++  option domain-search "<%= @domainsearch.join('", "')-%>";
++<%end-%>
++<%if @nameservers-%>
++<%if @nameservers.kind_of?(Array)-%>
++  option domain-name-servers <%= @nameservers.join(', ')-%>;
++<%else-%>
++  option domain-name-servers <%= @nameservers-%>;
++<%end-%>
++<%if @ntpservers-%>
++<%if @ntpservers.kind_of?(Array)-%>
++  option ntp-servers <%= @ntpservers.join(', ')-%>;
++<%else-%>
++  option ntp-servers <%= @ntpservers-%>;
++<%end-%>
++<%end-%>
++<%end-%>
++}
+diff -rupN ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/redhat/sysconfig-dhcpd ../../target/puppet/dhcp/templates/redhat/sysconfig-dhcpd
+--- ../../../target/deps/puppetlabs-dhcp-0.3.0/templates/redhat/sysconfig-dhcpd	2014-07-23 20:56:40.000000000 +0100
++++ ../../target/puppet/dhcp/templates/redhat/sysconfig-dhcpd	2015-03-03 09:38:08.000000000 +0000
+@@ -1,2 +1,2 @@
+ # Command line options here
+-DHCPDARGS=" <%= dhcp_interfaces.join(' ') %>"
++DHCPDARGS=" <%= @dhcp_interfaces.join(' ') %>"

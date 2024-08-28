@@ -1,0 +1,214 @@
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/client/config.pp ../../target/puppet/mcollective/manifests/client/config.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/client/config.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/client/config.pp	2020-12-10 14:14:16.000000000 +0000
+@@ -30,6 +30,10 @@ class mcollective::client::config {
+     value => $mcollective::client_logger_type,
+   }
+ 
++  mcollective::client::setting { 'plugin.rabbitmq.pool.1.host':
++    value => $mcollective::middleware_cli_host,
++  }
++
+   mcollective::soft_include { [
+     "::mcollective::client::config::connector::${mcollective::connector}",
+     "::mcollective::client::config::securityprovider::${mcollective::securityprovider}",
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/client/install.pp ../../target/puppet/mcollective/manifests/client/install.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/client/install.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/client/install.pp	2020-12-10 14:14:16.000000000 +0000
+@@ -5,7 +5,7 @@ class mcollective::client::install {
+   }
+ 
+   if $mcollective::manage_packages {
+-    package { 'mcollective-client':
++    package { 'EXTRlitpmcollectiveclient_CXP9031352':
+       ensure => $mcollective::version,
+     }
+   }
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/common/config/connector/rabbitmq/hosts_iteration.pp ../../target/puppet/mcollective/manifests/common/config/connector/rabbitmq/hosts_iteration.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/common/config/connector/rabbitmq/hosts_iteration.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/common/config/connector/rabbitmq/hosts_iteration.pp	2020-12-10 14:14:16.000000000 +0000
+@@ -1,17 +1,26 @@
+ # private define
+ # $name will be an index into the $mcollective::middleware_hosts array + 1
+ define mcollective::common::config::connector::rabbitmq::hosts_iteration {
+-  mcollective::common::setting { "plugin.rabbitmq.pool.${name}.host":
++  mcollective::server::setting { "plugin.rabbitmq.pool.${name}.host":
+     value => $mcollective::middleware_hosts[$name - 1], # puppet array 0-based
+   }
+ 
+-  $port = $mcollective::middleware_ssl ? {
++  $server_port = $mcollective::middleware_ssl ? {
+     true    => $mcollective::middleware_ssl_port,
+     default => $mcollective::middleware_port,
+   }
+ 
+-  mcollective::common::setting { "plugin.rabbitmq.pool.${name}.port":
+-    value => $port,
++  $client_port = $mcollective::securityprovider ? {
++    'psk'    => $mcollective::middleware_port,
++    default => $mcollective::middleware_ssl_port,
++  }
++
++  mcollective::server::setting { "plugin.rabbitmq.pool.${name}.port":
++    value => $server_port,
++  }
++
++  mcollective::client::setting { "plugin.rabbitmq.pool.${name}.port":
++    value => $client_port,
+   }
+ 
+   mcollective::common::setting { "plugin.rabbitmq.pool.${name}.user":
+@@ -23,15 +32,15 @@ define mcollective::common::config::conn
+   }
+ 
+   if $mcollective::middleware_ssl {
+-    mcollective::common::setting { "plugin.rabbitmq.pool.${name}.ssl":
++    mcollective::server::setting { "plugin.rabbitmq.pool.${name}.ssl":
+       value => 1,
+     }
+ 
+-    mcollective::common::setting { "plugin.rabbitmq.pool.${name}.ssl.ca":
++    mcollective::server::setting { "plugin.rabbitmq.pool.${name}.ssl.ca":
+       value => '/etc/mcollective/ca.pem',
+     }
+ 
+-    mcollective::common::setting { "plugin.rabbitmq.pool.${name}.ssl.fallback":
++    mcollective::server::setting { "plugin.rabbitmq.pool.${name}.ssl.fallback":
+       value => 0,
+     }
+   }
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/init.pp ../../target/puppet/mcollective/manifests/init.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/init.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/init.pp	2020-12-10 14:14:16.000000000 +0000
+@@ -42,6 +42,7 @@ class mcollective (
+   $middleware_ssl = false,
+   $middleware_admin_user = 'admin',
+   $middleware_admin_password = 'secret',
++  $middleware_cli_host = '::1',
+ 
+   # server-specific
+   $server_config_file = '/etc/mcollective/server.cfg',
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/middleware/rabbitmq.pp ../../target/puppet/mcollective/manifests/middleware/rabbitmq.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/middleware/rabbitmq.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/middleware/rabbitmq.pp	2020-12-10 14:36:44.058173398 +0000
+@@ -82,6 +82,12 @@ class mcollective::middleware::rabbitmq
+     type     => 'direct',
+     user     => $mcollective::middleware_admin_user,
+     password => $mcollective::middleware_admin_password,
++  } ~>
++
++  exec { 'restart':
++    command     => '/usr/bin/systemctl restart rabbitmq-server.service; /bin/echo \'olakease\' > /var/lock/rabbitmq-restart-once',
++    refreshonly => true,
++    creates     => '/var/lock/rabbitmq-restart-once',
+   } ->
+ 
+   anchor { 'mcollective::middleware::rabbitmq::end': }
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/server/install.pp ../../target/puppet/mcollective/manifests/server/install.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/server/install.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/server/install.pp	2020-12-10 14:14:16.000000000 +0000
+@@ -5,7 +5,7 @@ class mcollective::server::install {
+   }
+ 
+   if $mcollective::manage_packages {
+-    package { 'mcollective':
++    package { 'EXTRlitpmcollective_CXP9031034':
+       ensure => $mcollective::version,
+     }
+ 
+@@ -14,7 +14,7 @@ class mcollective::server::install {
+       # ruby-stomp as a dependency of mcollective, so hand specify
+       package { 'ruby-stomp':
+         ensure => 'installed',
+-        before => Package['mcollective'],
++        before => Package['EXTRlitpmcollective_CXP9031034'],
+       }
+     }
+   }
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/server/service.pp ../../target/puppet/mcollective/manifests/server/service.pp
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/manifests/server/service.pp	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/manifests/server/service.pp	2020-12-10 14:14:16.000000000 +0000
+@@ -7,5 +7,12 @@ class mcollective::server::service {
+   service { 'mcollective':
+     ensure => 'running',
+     enable => true,
++    notify  => Exec['one_mcollective_instance'],
++  }
++
++  exec { 'one_mcollective_instance':
++    command     => '[ $(pgrep mcollectived | wc -l) -eq 2 ] && kill -9 $(pgrep mcollectived | sort | head -n 1) || echo ',
++    refreshonly => true,
++    path        => ['/usr/bin/', '/bin/'],
+   }
+ }
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/spec/classes/mcollective_spec.rb ../../target/puppet/mcollective/spec/classes/mcollective_spec.rb
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/spec/classes/mcollective_spec.rb	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/spec/classes/mcollective_spec.rb	2020-12-10 14:14:16.000000000 +0000
+@@ -20,23 +20,23 @@ describe 'mcollective' do
+     describe '#manage_packages' do
+       context 'true' do
+         let(:params) { { :server => true, :manage_packages => true } }
+-        it { should contain_package('mcollective') }
++        it { should contain_package('EXTRlitpmcollective_CXP9031034') }
+       end
+ 
+       context 'false' do
+         let(:params) { { :server => true, :manage_packages => false } }
+-        it { should_not contain_package('mcollective') }
++        it { should_not contain_package('EXTRlitpmcollective_CXP9031034') }
+       end
+     end
+ 
+     describe '#version' do
+       it 'should default to present' do
+-        should contain_package('mcollective').with_ensure('present')
++          should contain_package('EXTRlitpmcollective_CXP9031034').with_ensure('present')
+       end
+ 
+       context '42' do
+         let(:params) { { :version => '42' } }
+-        it { should contain_package('mcollective').with_ensure('42') }
++        it { should contain_package('EXTRlitpmcollective_CXP9031034').with_ensure('42') }
+       end
+     end
+ 
+@@ -679,23 +679,23 @@ describe 'mcollective' do
+     describe '#manage_packages' do
+       context 'true' do
+         let(:params) { { :client => true, :manage_packages => true } }
+-        it { should contain_package('mcollective-client') }
++        it { should contain_package('EXTRlitpmcollectiveclient_CXP9031352') }
+       end
+ 
+       context 'false' do
+         let(:params) { { :client => true, :manage_packages => false } }
+-        it { should_not contain_package('mcollective-client') }
++        it { should_not contain_package('EXTRlitpmcollectiveclient_CXP9031352') }
+       end
+     end
+ 
+     describe '#version' do
+       it 'should default to present' do
+-        should contain_package('mcollective-client').with_ensure('present')
++          should contain_package('EXTRlitpmcollectiveclient_CXP9031352').with_ensure('present')
+       end
+ 
+       context '42' do
+         let(:params) { { :client => true, :version => '42' } }
+-        it { should contain_package('mcollective-client').with_ensure('42') }
++        it { should contain_package('EXTRlitpmcollectiveclient_CXP9031352').with_ensure('42') }
+       end
+     end
+ 
+diff -rupN ../../../target/deps/puppetlabs-mcollective-1.1.2/spec/system/end_to_end_spec.rb ../../target/puppet/mcollective/spec/system/end_to_end_spec.rb
+--- ../../../target/deps/puppetlabs-mcollective-1.1.2/spec/system/end_to_end_spec.rb	2013-11-12 18:57:52.000000000 +0000
++++ ../../target/puppet/mcollective/spec/system/end_to_end_spec.rb	2020-12-10 14:49:44.975567282 +0000
+@@ -11,7 +11,7 @@ describe 'single node setup:' do
+   describe 'bounce rabbitmq maybe' do
+     # rabbitmq needs a bounce to enable stomp - the rabbitmq module
+     # should probably take care of this
+-    context shell('sudo service rabbitmq-server restart') do
++    context shell('sudo /usr/bin/systemctl restart rabbitmq-server.service') do
+       # we want the command to run, we don't care what it returns
+       its(:exit_code) { should be_a_kind_of(Numeric) }
+     end
